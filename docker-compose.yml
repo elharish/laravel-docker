@@ -6,8 +6,8 @@ services:
     restart: always
     env_file:
       - .env
-    depends_on:
-      - db
+    volumes:
+      - ./.env:/var/www/.env
     networks:
       - laravel-docker
 
