@@ -42,6 +42,9 @@ jobs:
             docker compose down
             docker compose up -d
 
-            docker exec laravel_docker_app php artisan migrate --force
-            docker exec laravel_docker_app php artisan config:clear
-            docker exec laravel_docker_app php artisan cache:clear
+                        echo "Waiting for MySQL..."
+                        sleep 20
+
+                        docker exec laravel_docker_app php artisan migrate --force
+                        docker exec laravel_docker_app php artisan config:clear
+                        docker exec laravel_docker_app php artisan cache:clear
