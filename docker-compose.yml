@@ -7,7 +7,10 @@ services:
       - .env
     volumes:
       - ./.env:/var/www/.env
-      - laravel_app:/var/www          # ← share app files via named volume
+      - laravel_app:/var/www
+    depends_on:
+      db:
+        condition: service_healthy       # ← wait for healthy, not just started
     networks:
       - laravel-docker
 
@@ -18,7 +21,7 @@ services:
       - "80:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
-      - laravel_app:/var/www          # ← same named volume, NOT ./:/var/www
+      - laravel_app:/var/www
     depends_on:
       - app
     networks:
@@ -33,6 +36,12 @@ services:
       MYSQL_ROOT_PASSWORD: profiledb
       MYSQL_USER: admin
       MYSQL_PASSWORD: profiledb
+    healthcheck:                         # ← add this whole block
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pprofiledb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s                  # give MySQL time to initialize
     networks:
       - laravel-docker
 
