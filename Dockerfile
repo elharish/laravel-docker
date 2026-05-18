@@ -1,33 +1,32 @@
 FROM php:8.2-fpm
 
-# System deps
 RUN apt-get update && apt-get install -y \
     git curl zip unzip libpng-dev libonig-dev libxml2-dev \
-    nodejs npm
+    nodejs npm \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# PHP extensions
 RUN docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd
 
-# Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www
 
-# Copy project
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --optimize-autoloader --no-scripts --no-autoloader
+
+COPY package.json package-lock.json ./
+RUN npm ci && npm cache clean --force
+
 COPY . .
 
-# Install dependencies
-RUN composer install --no-dev --optimize-autoloader
+RUN composer dump-autoload --optimize --no-dev
 
-# Build frontend
-RUN npm install && npm run build
+RUN npm run build && rm -rf node_modules
 
-# Permissions
-RUN mkdir -p /tmp \
- && chmod 1777 /tmp \
- && chown -R www-data:www-data /var/www \
+RUN chown -R www-data:www-data /var/www \
  && chmod -R 775 storage bootstrap/cache
 
 USER www-data
 
+EXPOSE 9000
 CMD ["php-fpm"]
