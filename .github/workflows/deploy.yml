@@ -38,40 +38,31 @@ jobs:
     needs: build
 
     steps:
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
-
-      - name: Add host to known_hosts
+      - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy with Rollback
-        shell: bash
         run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << EOF
             set -e
             cd /var/www/laravel-docker
 
-            echo "Saving current app image..."
-            OLD_IMAGE=$(docker inspect laravel_docker_app --format='{{.Config.Image}}' || true)
+            echo "Saving current image..."
+            OLD_IMAGE=\$(docker inspect laravel_docker_app --format='{{.Config.Image}}' || true)
 
             rollback() {
               echo "Deployment failed. Rolling back..."
 
-              if [ -n "$OLD_IMAGE" ]; then
-                docker pull "$OLD_IMAGE"
+              if [ -n "\$OLD_IMAGE" ]; then
+                docker pull "\$OLD_IMAGE"
 
-                docker compose down
+                sed -i "s|image: .*|image: \$OLD_IMAGE|" docker-compose.yml
 
-                docker run -d \
-                  --name laravel_docker_app \
-                  --network laravel-docker_laravel-docker \
-                  "$OLD_IMAGE"
-
-                docker compose up -d db nginx
+                docker compose up -d --force-recreate app
 
                 echo "Rollback complete"
               else
@@ -81,11 +72,16 @@ jobs:
               exit 1
             }
 
-            echo "Pulling new app image..."
-            docker pull ${{ secrets.DOCKER_USERNAME }}/laravel_docker_app:${{ github.sha }} || rollback
+            NEW_IMAGE=${{ secrets.DOCKER_USERNAME }}/laravel_docker_app:${{ github.sha }}
 
-            echo "Updating only app container..."
-            docker compose up -d --no-deps app || rollback
+            echo "Pulling new image..."
+            docker pull \$NEW_IMAGE || rollback
+
+            echo "Updating docker-compose.yml..."
+            sed -i "s|image: .*|image: \$NEW_IMAGE|" docker-compose.yml
+
+            echo "Restarting app..."
+            docker compose up -d --no-deps --force-recreate app || rollback
 
             echo "Running Laravel commands..."
             docker compose exec -T app php artisan migrate --force || rollback
@@ -95,7 +91,7 @@ jobs:
             echo "Waiting for app..."
             sleep 20
 
-            echo "Running health check..."
+            echo "Health check..."
             curl -f http://localhost:8001 || rollback
 
             echo "Deployment successful"
