@@ -38,69 +38,69 @@ jobs:
     needs: build
 
     steps:
-      - name: Restore SSH key
+      - name: Setup SSH key
+        shell: bash
         run: |
-          echo "${{ secrets.EC2_SSH_KEY_B64 }}" | base64 -d > private_key
-          chmod 600 private_key
+          mkdir -p ~/.ssh
+          printf "%s" "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy with Rollback
+        shell: bash
         run: |
-          ssh -i private_key \
-            -o StrictHostKeyChecking=no \
-            ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
-
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
             cd /var/www/laravel-docker
 
-            echo "Saving old image..."
+            echo "Saving current image..."
             OLD_IMAGE=$(docker inspect laravel_docker_app --format='{{.Config.Image}}' || true)
 
+            rollback() {
+              echo "Deployment failed. Rolling back..."
+
+              if [ -n "$OLD_IMAGE" ]; then
+                docker compose down || true
+
+                docker pull "$OLD_IMAGE"
+
+                docker run -d \
+                  --name laravel_docker_app \
+                  --network laravel-docker \
+                  "$OLD_IMAGE"
+
+                docker run -d \
+                  --name laravel_docker_nginx \
+                  --network laravel-docker \
+                  -p 8001:80 \
+                  -v /var/www/laravel-docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro \
+                  nginx:alpine
+
+                echo "Rollback complete"
+              else
+                echo "No previous image found"
+              fi
+
+              exit 1
+            }
+
             echo "Deploying new version..."
-            docker compose pull
-            docker compose up -d --remove-orphans
+            docker compose pull || rollback
+            docker compose up -d --remove-orphans || rollback
+
+            echo "Running Laravel commands..."
+            docker compose exec -T app php artisan migrate --force || rollback
+            docker compose exec -T app php artisan optimize:clear || rollback
+            docker compose exec -T app php artisan optimize || rollback
 
             echo "Waiting for app..."
             sleep 25
 
             echo "Running health check..."
-            if curl -f http://localhost:8001; then
-                echo "Deployment successful"
+            curl -f http://localhost:8001 || rollback
 
-                docker compose exec -T app php artisan migrate --force
-                docker compose exec -T app php artisan optimize:clear
-                docker compose exec -T app php artisan optimize
-
-            else
-                echo "Health check failed"
-
-                if [ -n "$OLD_IMAGE" ]; then
-                    echo "Rolling back..."
-
-                    docker compose down
-
-                    docker pull $OLD_IMAGE
-
-                    docker run -d \
-                      --name laravel_docker_app \
-                      --network laravel-docker \
-                      $OLD_IMAGE
-
-                    docker run -d \
-                      --name laravel_docker_nginx \
-                      --network laravel-docker \
-                      -p 8001:80 \
-                      -v /var/www/laravel-docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro \
-                      nginx:alpine
-
-                    echo "Rollback complete"
-                    exit 1
-                else
-                    echo "No previous image found"
-                    exit 1
-                fi
-            fi
+            echo "Deployment successful"
 
             echo "Cleaning old images..."
             docker image prune -f
-
           EOF
