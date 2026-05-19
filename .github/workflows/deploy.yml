@@ -40,6 +40,10 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          timeout: 60s
+          command_timeout: 15m
+          debug: true
           script: |
             set -e
             cd /var/www/laravel-docker
@@ -47,12 +51,6 @@ jobs:
             docker compose pull
             docker compose up -d --remove-orphans
 
-            echo "Running Laravel post-deploy tasks..."
             docker compose exec -T app php artisan migrate --force
             docker compose exec -T app php artisan optimize:clear
             docker compose exec -T app php artisan optimize
-
-            echo "Cleaning up old images..."
-            docker image prune -f
-
-            echo "Deploy complete"
