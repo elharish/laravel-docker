@@ -12,12 +12,14 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www
 
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --optimize-autoloader --no-scripts --no-autoloader
+RUN composer install --no-dev --optimize-autoloader --no-scripts
 
 COPY package.json package-lock.json ./
 RUN npm ci && npm cache clean --force
 
 COPY . .
+
+RUN composer dump-autoload --optimize --no-dev
 
 RUN npm run build && rm -rf node_modules
 

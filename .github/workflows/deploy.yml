@@ -45,55 +45,29 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy with Rollback
+      - name: Deploy
         run: |
           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << EOF
             set -e
             cd /var/www/laravel-docker
 
-            OLD_IMAGE=\$(docker inspect laravel_docker_app --format='{{.Config.Image}}' || true)
-            NEW_IMAGE=${{ secrets.DOCKER_USERNAME }}/laravel_docker_app:${{ github.sha }}
+            echo "Pull latest image..."
+            docker pull ${{ secrets.DOCKER_USERNAME }}/laravel_docker_app:latest
 
-            rollback() {
-              echo "Deployment failed. Rolling back..."
+            echo "Restart containers..."
+            docker compose down
+            docker compose up -d
 
-              if [ -n "\$OLD_IMAGE" ]; then
-                docker pull "\$OLD_IMAGE"
+            echo "Wait for DB..."
+            sleep 30
 
-                sed -i "s|image: .*|image: \$OLD_IMAGE|" docker-compose.yml
-
-                docker compose up -d --no-deps --force-recreate app
-
-                echo "Rollback complete"
-              else
-                echo "No previous image found"
-              fi
-
-              exit 1
-            }
-
-            echo "Pulling new image..."
-            docker pull \$NEW_IMAGE || rollback
-
-            echo "Updating app image..."
-            sed -i "s|image: .*|image: \$NEW_IMAGE|" docker-compose.yml
-
-            echo "Restarting app..."
-            docker compose up -d --no-deps --force-recreate app || rollback
-
-            echo "Waiting for app..."
-            sleep 20
-
-            echo "Checking vendor..."
-            docker compose exec -T app test -f /var/www/vendor/autoload.php || rollback
-
-            echo "Running Laravel commands..."
-            docker compose exec -T app php artisan migrate --force || rollback
-            docker compose exec -T app php artisan optimize:clear || rollback
-            docker compose exec -T app php artisan optimize || rollback
+            echo "Laravel commands..."
+            docker exec -i laravel_docker_app php artisan migrate --force
+            docker exec -i laravel_docker_app php artisan optimize:clear
+            docker exec -i laravel_docker_app php artisan optimize
 
             echo "Health check..."
-            curl -f http://localhost:8001 || rollback
+            curl -f http://localhost:8001
 
             echo "Deployment successful"
 
