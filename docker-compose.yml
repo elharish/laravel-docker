@@ -38,14 +38,15 @@ services:
       MYSQL_ROOT_PASSWORD: elharish
       MYSQL_USER: admin
       MYSQL_PASSWORD: elharish
+    command: --default-authentication-plugin=mysql_native_password
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pelharish"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 40s
     networks:
       - laravel-docker
 
