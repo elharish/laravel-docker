@@ -7,7 +7,7 @@ services:
       - .env
     volumes:
       - laravel_storage:/var/www/storage
-      - laravel_public:/var/www/public        # ← share public
+      - laravel_public:/var/www/public
     depends_on:
       db:
         condition: service_healthy
@@ -23,7 +23,7 @@ services:
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - laravel_storage:/var/www/storage
-      - laravel_public:/var/www/public        # ← share public
+      - laravel_public:/var/www/public
     depends_on:
       - app
     networks:
@@ -55,5 +55,5 @@ networks:
 
 volumes:
   laravel_storage:
-  laravel_public:                             # ← add this
+  laravel_public:
   db_data:
