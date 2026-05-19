@@ -51,8 +51,8 @@ jobs:
             set -e
             cd /var/www/laravel-docker
 
-            echo "Saving current image..."
             OLD_IMAGE=\$(docker inspect laravel_docker_app --format='{{.Config.Image}}' || true)
+            NEW_IMAGE=${{ secrets.DOCKER_USERNAME }}/laravel_docker_app:${{ github.sha }}
 
             rollback() {
               echo "Deployment failed. Rolling back..."
@@ -62,7 +62,7 @@ jobs:
 
                 sed -i "s|image: .*|image: \$OLD_IMAGE|" docker-compose.yml
 
-                docker compose up -d --force-recreate app
+                docker compose up -d --no-deps --force-recreate app
 
                 echo "Rollback complete"
               else
@@ -72,24 +72,25 @@ jobs:
               exit 1
             }
 
-            NEW_IMAGE=${{ secrets.DOCKER_USERNAME }}/laravel_docker_app:${{ github.sha }}
-
             echo "Pulling new image..."
             docker pull \$NEW_IMAGE || rollback
 
-            echo "Updating docker-compose.yml..."
+            echo "Updating app image..."
             sed -i "s|image: .*|image: \$NEW_IMAGE|" docker-compose.yml
 
             echo "Restarting app..."
             docker compose up -d --no-deps --force-recreate app || rollback
 
+            echo "Waiting for app..."
+            sleep 20
+
+            echo "Checking vendor..."
+            docker compose exec -T app test -f /var/www/vendor/autoload.php || rollback
+
             echo "Running Laravel commands..."
             docker compose exec -T app php artisan migrate --force || rollback
             docker compose exec -T app php artisan optimize:clear || rollback
             docker compose exec -T app php artisan optimize || rollback
-
-            echo "Waiting for app..."
-            sleep 20
 
             echo "Health check..."
             curl -f http://localhost:8001 || rollback
