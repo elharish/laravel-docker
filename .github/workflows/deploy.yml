@@ -55,19 +55,23 @@ jobs:
             set -e
             cd /var/www/laravel-docker
 
-            echo "Saving current image..."
+            echo "Saving current app image..."
             OLD_IMAGE=$(docker inspect laravel_docker_app --format='{{.Config.Image}}' || true)
 
             rollback() {
               echo "Deployment failed. Rolling back..."
 
               if [ -n "$OLD_IMAGE" ]; then
-                echo "Restoring old image in docker-compose..."
+                docker pull "$OLD_IMAGE"
 
-                sed -i "s|image: .*|image: $OLD_IMAGE|" docker-compose.yml
+                docker compose down
 
-                docker compose pull
-                docker compose up -d --remove-orphans
+                docker run -d \
+                  --name laravel_docker_app \
+                  --network laravel-docker_laravel-docker \
+                  "$OLD_IMAGE"
+
+                docker compose up -d db nginx
 
                 echo "Rollback complete"
               else
@@ -77,12 +81,11 @@ jobs:
               exit 1
             }
 
-            echo "Updating docker-compose to new image..."
-            sed -i "s|image: .*|image: ${{ secrets.DOCKER_USERNAME }}/laravel_docker_app:${{ github.sha }}|" docker-compose.yml
+            echo "Pulling new app image..."
+            docker pull ${{ secrets.DOCKER_USERNAME }}/laravel_docker_app:${{ github.sha }} || rollback
 
-            echo "Deploying new version..."
-            docker compose pull || rollback
-            docker compose up -d --remove-orphans || rollback
+            echo "Updating only app container..."
+            docker compose up -d --no-deps app || rollback
 
             echo "Running Laravel commands..."
             docker compose exec -T app php artisan migrate --force || rollback
@@ -90,13 +93,12 @@ jobs:
             docker compose exec -T app php artisan optimize || rollback
 
             echo "Waiting for app..."
-            sleep 25
+            sleep 20
 
             echo "Running health check..."
             curl -f http://localhost:8001 || rollback
 
             echo "Deployment successful"
 
-            echo "Cleaning old images..."
             docker image prune -f
           EOF
