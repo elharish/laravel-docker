@@ -19,8 +19,6 @@ RUN npm ci && npm cache clean --force
 
 COPY . .
 
-RUN composer dump-autoload --optimize --no-dev
-
 RUN npm run build && rm -rf node_modules
 
 RUN chown -R www-data:www-data /var/www \
